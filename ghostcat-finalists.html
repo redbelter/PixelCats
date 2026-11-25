@@ -1,0 +1,183 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin:0; padding:0; background:transparent; overflow:hidden; }
+  body { color: var(--foreground, #222); font: 12px/1.4 system-ui, sans-serif; }
+  .cap { padding:10px 16px 4px; color: var(--muted-foreground, #666); }
+  #hero { position:relative; height:132px; margin:2px 12px 12px; border-radius:12px;
+          background: color-mix(in srgb, var(--card, #eee) 55%, transparent); overflow:hidden; }
+  #heroC { position:absolute; left:0; top:0; will-change:transform; }
+  .grid { display:flex; flex-wrap:wrap; gap:16px 10px; padding:6px 14px 20px; }
+  .card { flex:1 1 150px; max-width:220px; min-height:150px; display:flex; flex-direction:column;
+          align-items:center; justify-content:flex-end; gap:4px; border-radius:10px;
+          background: color-mix(in srgb, var(--card, #eee) 35%, transparent); padding:8px 6px; }
+  canvas { display:block; image-rendering:pixelated; image-rendering:crisp-edges; }
+  .nm { font-weight:600; font-size:12px; margin-top:auto; }
+  .nt { color: var(--muted-foreground, #666); font-size:10px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="cap">ghost cat finalists &#8212; top 5 from the animation-weighted ranking &#183; each with bespoke motion &#183; top strip = live drift demo</div>
+
+<div id="hero"><div id="heroC"><canvas id="heroCv"></canvas></div></div>
+<div class="grid" id="grid"></div>
+
+<script>
+// legend: '.' transparent '#' outline 'b' body 's' belly 'e' eye
+// 'p' blush '-' closed eye · accent chars animate as their own layer
+var V = [
+ { n:'Crescent', accent:'t', tick:800, blinkEvery:4, bodyY:1.0, accY:1.4, accLead:0.9,
+   pal:{'#':'#5e5540','b':'#efe6d2','s':'#dacdb0','e':'#443b28','p':'#d9a09a','t':'#c9b07a','-':'#5e5540'},
+   f:["...######...",
+      "..#bbbbbb#..",
+      ".#bbbbbbbb#.",
+      ".#bebbbbeb#.",
+      ".#bpbbbbpb#.",
+      ".#bssssssb#.",
+      "tt.#ssss#.tt",
+      "..tt#..#tt..",
+      "....tttt...."],
+   nt:'tail curls around the body and springs against each bob' },
+
+ { n:'Tabby', accent:'t', tick:700, blinkEvery:4, bodyY:0, accY:0,
+   pal:{'#':'#4f5e4d','b':'#e4ecd9','s':'#c6d4b4','e':'#3b4a37','p':'#cfd08a','a':'#8ba07c','t':'#8ba07c','-':'#4f5e4d'},
+   frames:[
+    ["....####....","..#abababa#.",".#bbbbbbbb#.",".#beb..beb#.",".#bpbbbbpb#.",".#bssssssb#.","..#ssssss#..","...#.##.#t..","....#.#.tt.."],
+    ["....####....","..#abababa#.",".#bbbbbbbb#.",".#beb..beb#.",".#bpbbbbpb#.",".#bssssssb#.","..#ssssss#..","t..#.##.#...","tt...#.#...."]],
+   nt:'tail sweeps left-right across two poses; stripes stay quiet' },
+
+ { n:'Halo', accent:'m', tick:650, blinkEvery:5, bodyY:0.7, accY:1.3, accLead:3.1,
+   pal:{'#':'#565a6e','b':'#f0f0f6','s':'#d8d8e4','e':'#3e4254','p':'#d9aab4','m':'#e8d48a','-':'#565a6e'},
+   f:[".mmmmmm.",
+      "........",
+      "..####..",
+      ".#bbbb#.",
+      ".#ebbe#.",
+      ".#bpp#..",
+      ".#bbbb#.",
+      ".#bssb#.",
+      "..#.##.."],
+   nt:'ring hovers on its own rhythm — two-layer float' },
+
+ { n:'Tassel', accent:'t', tick:620, blinkEvery:5, bodyY:0.6, accY:0, perCell:true,
+   pal:{'#':'#4e3a48','b':'#e8dce8','s':'#cfbfce','e':'#3d2f3a','p':'#c98f9f','t':'#d4a94e','-':'#4e3a48'},
+   f:["....####....",
+      "..#bbbbbb#..",
+      ".#bbbbbbbb#.",
+      ".#bebbbbeb#.",
+      ".#bpbbbbpb#.",
+      ".#bssssssb#.",
+      "..#tttttt#..",
+      "...t.t.t...."],
+   nt:'gold fringe swings cell-by-cell like a pendulum' },
+
+ { n:'Comet', accent:'t', tick:560, blinkEvery:5, bodyY:1.0, accX:1.0, hop:true,
+   pal:{'#':'#46586e','b':'#dfeaf4','s':'#bccfdf','e':'#33465c','p':'#d9a0a8','t':'#a8c4de','-':'#46586e'},
+   f:["tt......",
+      ".tt.####",
+      "..t.ebbe",
+      "..t.bbbp",
+      "...t.##.",
+      "....#.#."],
+   nt:'streak trails behind a little hop; dashes drift opposite' }
+];
+
+function pad(rows) {
+  var w = rows.reduce(function (m, r) { return Math.max(m, r.length); }, 0);
+  return rows.map(function (r) {
+    var l = Math.floor((w - r.length) / 2);
+    return new Array(l + 1).join('.') + r + new Array(w - r.length - l + 1).join('.');
+  });
+}
+function blinkRows(rows) {
+  return rows.map(function (r) { return r.replace(/e/g, '-'); });
+}
+
+function build(v, cv) {
+  var frames = (v.frames || [v.f]).map(pad);
+  var W = frames.reduce(function (m, f) { return Math.max(m, f[0].length); }, 0);
+  var H = frames.reduce(function (m, f) { return Math.max(m, f.length); }, 0);
+  var S = v.sc || 5;
+  cv.width = (W + 2) * S; cv.height = (H + 2) * S;
+  var ctx = cv.getContext('2d');
+  var headY = 1;                       // top headroom cell
+
+  function drawCells(rows, ph) {
+    var bodyOy = Math.round(v.bodyY * Math.sin(ph));
+    var accOy  = Math.round(v.accY * Math.sin(ph + v.accLead));
+    var accOx  = v.accX ? Math.round(-v.accX * Math.sin(ph)) : 0;
+    for (var y = 0; y < rows.length; y++) {
+      for (var x = 0; x < rows[y].length; x++) {
+        var ch = rows[y][x], c = v.pal[ch];
+        if (!c) continue;
+        var dx = 0, dy = bodyOy;
+        if (ch === v.accent) {
+          dy = accOy; dx = accOx;
+          if (v.perCell) dy = Math.round(1.2 * Math.sin(ph * 1.3 + x * 0.7));
+        }
+        ctx.fillStyle = c;
+        ctx.fillRect((x + dx) * S, (y + dy + headY) * S, S, S);
+      }
+    }
+  }
+
+  var i = 0;
+  function tick() {
+    var fi = i % frames.length;
+    var rows = frames[fi];
+    if (i % v.blinkEvery === v.blinkEvery - 1) rows = blinkRows(rows);
+    var ph = i * 0.85;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    drawCells(rows, ph);
+    i++;
+  }
+  tick();
+  setInterval(tick, v.tick);
+}
+
+var grid = document.getElementById('grid');
+V.forEach(function (v) {
+  var card = document.createElement('div'); card.className = 'card';
+  var cv = document.createElement('canvas');
+  card.appendChild(cv);
+  var nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = v.n;
+  var nt = document.createElement('div'); nt.className = 'nt'; nt.textContent = v.nt;
+  card.appendChild(nm); card.appendChild(nt);
+  grid.appendChild(card);
+  build(v, cv);
+});
+
+// ---- hero: live drift demo (Crescent) --------------------------------------
+(function hero() {
+  var v = V[0], cv = document.getElementById('heroCv'), pet = document.getElementById('heroC');
+  build(v, cv);
+  var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+  function pickSpot() {
+    var w = document.getElementById('hero').clientWidth, h = document.getElementById('hero').clientHeight;
+    var bw = cv.width, bh = cv.height;
+    var x, y, r = Math.random();
+    if (r < 0.32)      { x = rnd(10, Math.max(50, w * 0.2));  y = rnd(8, h * 0.4); }
+    else if (r < 0.64) { x = rnd(w * 0.72, w - bw - 10);      y = rnd(8, h * 0.4); }
+    else if (r < 0.82) { x = rnd(10, Math.max(50, w * 0.22)); y = rnd(h * 0.42, h - bh - 6); }
+    else if (r < 0.95) { x = rnd(w * 0.72, w - bw - 10);      y = rnd(h * 0.42, h - bh - 6); }
+    else               { x = rnd(w * 0.34, w * 0.6);          y = rnd(8, h * 0.3); }
+    x = Math.min(x, Math.max(0, w - bw)); y = Math.min(y, Math.max(0, h - bh));
+    return [Math.round(x), Math.round(y)];
+  }
+  var p0 = pickSpot();
+  pet.style.transform = 'translate(' + p0[0] + 'px,' + p0[1] + 'px)';
+  if (reduced) return;
+  function hop() {
+    var p = pickSpot(), dur = rnd(4, 9);
+    pet.style.transition = 'transform ' + dur.toFixed(2) + 's cubic-bezier(.35,.9,.4,1)';
+    pet.style.transform = 'translate(' + p[0] + 'px,' + p[1] + 'px)';
+    setTimeout(hop, dur * 1000 + rnd(2500, 7000));
+  }
+  setTimeout(hop, rnd(1500, 3500));
+})();
+</script>
+</body>
+</html>

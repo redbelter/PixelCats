@@ -1,0 +1,137 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin:0; padding:0; background:transparent; overflow:hidden; height:100%; }
+  #pet { position:absolute; left:0; top:0; will-change:transform; }
+  /* soft floating bob, always running — ghosts hover */
+  .float { animation: bob 3.4s ease-in-out infinite; }
+  @keyframes bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+  canvas { display:block; image-rendering:pixelated; image-rendering:crisp-edges; }
+</style>
+</head>
+<body>
+<div id="pet"><div class="float"><canvas id="c"></canvas></div></div>
+<script>
+(function () {
+  // ---- palette -----------------------------------------------------------
+  // '.' transparent | 'o' slate outline | 'b' lavender-white body
+  // 's' soft shade belly | 'e' eye | 'p' pink nose/blush | 't' tail tip
+  var PAL = { '.':null, '-':'#4b4a63', 'o':'#4b4a63', 'b':'#e9e6f5', 's':'#cfd0e6',
+              'e':'#3b6f8f', 'p':'#e8a7b8', 't':'#a8c8d8' };
+
+  // ---- frames (15 wide) : round blob ghost, side-flick tail --------------
+  var BODY = [
+    "....oo....oo...",
+    "...oooooooooo..",
+    "..obbbbbbbbbo..",
+    "..obbbbbbbbbo..",
+    "..osbbbbbbbso..",
+    "..osepbbbpeso..",
+    "..osbbbbbbbso..",
+    "..ossssssssso..",
+    "..ossssssssso..",
+    "..ooooooooooo..",
+    "...oo.ooo.oo..."
+  ];
+  // tail tip positions per frame: [row, col] pairs appended in 't'
+  var TAIL_UP   = [[1,14],[2,15],[3,15]];
+  var TAIL_DOWN = [[3,15],[4,15],[5,14]];
+
+  function compose(tail) {
+    return BODY.map(function (row, i) {
+      var cells = row.split('');
+      tail.forEach(function (pos) {
+        if (pos[0] === i && cells[pos[1]] === '.') cells[pos[1]] = 't';
+      });
+      return cells.join('');
+    });
+  }
+  // blink: swap the open-eye row for a closed-eye row
+  var EYES_OPEN_ROW = "..osepbbbpeso..";
+  var EYES_SHUT_ROW = "..os--bbbb--so.";
+  function withClosedEyes(rows) {
+    return rows.map(function (r) { return r === EYES_OPEN_ROW ? EYES_SHUT_ROW : r; });
+  }
+
+  var up   = compose(TAIL_UP);
+  var down = compose(TAIL_DOWN);
+  // cycle: tail flick left/right/right + one blink — slow, steps-style
+  var FRAMES = [up, down, withClosedEyes(down), down];
+
+  var S = 5, CW = 15, CH = BODY.length;
+  var cv = document.getElementById('c');
+  cv.width = CW * S; cv.height = (CH + 1) * S;   // +1 row headroom for bob
+  var ctx = cv.getContext('2d');
+
+  function draw(rows) {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    for (var y = 0; y < rows.length; y++) {
+      for (var x = 0; x < rows[y].length; x++) {
+        var col = PAL[rows[y][x]];
+        if (!col) continue;
+        ctx.fillStyle = col;
+        ctx.fillRect(x * S, (y + 1) * S, S, S);
+      }
+    }
+  }
+
+  var fi = 0;
+  draw(FRAMES[0]);
+  setInterval(function () {
+    fi = (fi + 1) % FRAMES.length;
+    draw(FRAMES[fi]);
+  }, 950);
+
+  // ---- genuinely-random drift (edge-biased, avoids lower-center captions) -
+  var pet = document.getElementById('pet');
+  var reduced = window.matchMedia &&
+                window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+
+  function pickSpot() {
+    var w = window.innerWidth, h = window.innerHeight;
+    var bw = cv.width, bh = cv.height;
+    var x, y, r = Math.random();
+    if (r < 0.28)      { x = rnd(18, Math.max(60, w * 0.18));        y = rnd(18, h * 0.30); }   // top-left
+    else if (r < 0.56) { x = rnd(w * 0.74, w - bw - 14);             y = rnd(18, h * 0.30); }   // top-right
+    else if (r < 0.74) { x = rnd(18, Math.max(60, w * 0.20));        y = rnd(h * 0.34, h * 0.70); } // mid-left
+    else if (r < 0.90) { x = rnd(w * 0.74, w - bw - 14);             y = rnd(h * 0.36, h * 0.72); } // mid-right
+    else if (r < 0.97) { x = rnd(w * 0.32, w * 0.60);                y = rnd(h * 0.05, h * 0.24); } // top-center
+    else               { x = rnd(w * 0.15, w * 0.75);                y = rnd(h * 0.75, h * 0.88); } // low band, rare
+    x = Math.min(x, Math.max(0, w - bw));
+    y = Math.min(y, Math.max(0, h - bh));
+    return [Math.round(x), Math.round(y)];
+  }
+
+  if (reduced) {
+    var p0 = pickSpot();
+    pet.style.transform = 'translate(' + p0[0] + 'px,' + p0[1] + 'px)';
+    document.querySelector('.float').style.animation = 'none';
+    return;
+  }
+
+  function hop() {
+    var p = pickSpot();
+    var dur = rnd(5, 12);
+    if (Math.random() < 0.18) dur = rnd(1.4, 2.2);       // occasional quick hop
+    pet.style.transition = 'transform ' + dur.toFixed(2) + 's cubic-bezier(.35,.9,.4,1)';
+    pet.style.transform = 'translate(' + p[0] + 'px,' + p[1] + 'px)';
+    setTimeout(hop, dur * 1000 + rnd(3500, 11000));      // long rest between moves
+  }
+
+  var p = pickSpot();
+  pet.style.transform = 'translate(' + p[0] + 'px,' + p[1] + 'px)';
+  setTimeout(hop, rnd(2000, 5000));
+
+  window.addEventListener('resize', function () {
+    var q = pickSpot();
+    pet.style.transition = 'transform 2s ease';
+    pet.style.transform = 'translate(' + q[0] + 'px,' + q[1] + 'px)';
+  });
+})();
+</script>
+</body>
+</html>

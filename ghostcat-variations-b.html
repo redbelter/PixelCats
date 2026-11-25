@@ -1,0 +1,204 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin:0; padding:0; background:transparent; overflow:hidden; }
+  body { color: var(--foreground, #222); font: 12px/1.4 system-ui, sans-serif; }
+  .cap { padding:10px 16px 4px; color: var(--muted-foreground, #666); }
+  #hero { position:relative; height:128px; margin:2px 12px 12px; border-radius:12px;
+          background: color-mix(in srgb, var(--card, #eee) 55%, transparent); overflow:hidden; }
+  #heroC { position:absolute; left:0; top:0; will-change:transform; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
+          gap:18px 6px; padding:6px 14px 20px; }
+  .card { display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:4px; }
+  canvas { display:block; image-rendering:pixelated; image-rendering:crisp-edges; }
+  .nm { font-weight:600; font-size:11.5px; }
+  .nt { color: var(--muted-foreground, #666); font-size:10px; text-align:center; max-width:140px; }
+  @keyframes bob  { 0%,100% { transform: translateY(0); }  50% { transform: translateY(-4px); } }
+  @keyframes hop  { 0%,100% { transform: translateY(0); }  50% { transform: translateY(-7px); } }
+  @keyframes sway { 0%,100% { transform: translateX(0); }  50% { transform: translateX(-3px); } }
+  @keyframes jig  { 0%,100% { transform: translateY(0); }  50% { transform: translateY(-2px) scaleX(1.02); } }
+  @keyframes tilt { 0%,100% { transform: rotate(0deg); }   50% { transform: rotate(-4deg); } }
+</style>
+</head>
+<body>
+<div class="cap">ghost cat II &#8212; 20 more takes &#183; top strip = live drift demo</div>
+
+<div id="hero"><div id="heroC"><canvas id="heroCv"></canvas></div></div>
+<div class="grid" id="grid"></div>
+
+<script>
+// legend: '.' transparent '#' outline 'b' body 's' belly 'e' eye
+// 'p' blush/nose '-' closed eye 'a'/'m' fur patch 't' tail tip
+var V = [
+ { n:'Sprout', nt:'leaf sprout head \u00b7 calm bob', ms:3800, sc:4, anim:'bob 3.6s ease-in-out infinite',
+   pal:{'#':'#5f6b58','b':'#eef0e4','s':'#d5dbc6','e':'#3f4a3a','p':'#dda8a8','t':'#8fbf7f','-':'#5f6b58'},
+   f:[".....##.....","....#tt#....","...######...","..#bbbbbb#..",".#bebbbbeb#.",".#bpbbbbpb#.",
+      ".#bssssssb#.","..#ssssss#..","...#.##.#...","....#.#.#..."] },
+
+ { n:'Pancake', nt:'flat wide puddle-shape \u00b7 slow squash', ms:5000, sc:4, anim:'jig 3s ease-in-out infinite',
+   pal:{'#':'#6b5a3e','b':'#f4e3c2','s':'#e0c99c','e':'#4a3a24','p':'#dd9a80','-':'#6b5a3e'},
+   f:["..############..",".#bbbbbbbbbbbb#.","#bebbbbbbbbbbbe#","#bpbbbbbbbbbbpb#","#bssssssssssssb#","..#.##.##.##...."] },
+
+ { n:'Tower', nt:'tall narrow column \u00b7 side sway', ms:3000, sc:5, anim:'sway 3.4s ease-in-out infinite',
+   pal:{'#':'#3c4658','b':'#dbe4ef','s':'#b9c6d8','e':'#2c3a4e','p':'#d9a0a0','-':'#3c4658','t':'#9db0c8'},
+   f:["...####...","..#bbbb#..","..#e..e#..","..#bpp#...","..#bbbb#..","..#bssb#..","..#bssbt..","..#bsbbt..","...#bb#...","...#.##..."] },
+
+ { n:'Bubble', nt:'perfect sphere \u00b7 double-height eyes', ms:6000, sc:4, anim:'bob 5.5s ease-in-out infinite',
+   pal:{'#':'#4a6068','b':'#dcefee','s':'#b8d5d3','e':'#325054','p':'#e0a8b0','-':'#4a6068'},
+   f:["..########..",".#bbbbbbbb#.",".#bebbbbeb#.",".#bebbbbeb#.",".#bpbbbbpb#.",".#bssssssb#.","..#.####.#.."] },
+
+ { n:'Tassel', nt:'gold fringe hem \u00b7 pendulum sway', ms:4000, sc:4, anim:'sway 2.8s ease-in-out infinite',
+   pal:{'#':'#4e3a48','b':'#e8dce8','s':'#cfbfce','e':'#3d2f3a','p':'#c98f9f','-':'#4e3a48','t':'#d4a94e'},
+   f:["....####....","..#bbbbbb#..",".#bbbbbbbb#.",".#bebbbbeb#.",".#bpbbbbpb#.",".#bssssssb#.","..#tttttt#..","...t.t.t...."] },
+
+ { n:'Specs', nt:'round glasses \u00b7 scholarly bob', ms:5200, sc:5, anim:'bob 4.2s ease-in-out infinite',
+   pal:{'#':'#54505e','b':'#efece4','s':'#dbd6c9','e':'#413d4a','p':'#d9a8a8','g':'#b08a3e','-':'#54505e'},
+   f:["...######...","..#bbbbbb#..",".#begbbbegb#",".#bpbbbbpb#.",".#bsssssb#..","...#bbbb#...","....#..#...."] },
+
+ { n:'Bowtie', nt:'tiny red bowtie \u00b7 perky hop', ms:3400, sc:5, anim:'hop 2.6s ease-in-out infinite',
+   pal:{'#':'#4a4a52','b':'#e8e8ee','s':'#d0d0da','e':'#383840','p':'#d9a0a0','-':'#4a4a52','a':'#c4544e'},
+   f:[".#......#.",".#bbbbbb#.",".#eb..be#.",".#bbbbbb#.",".#aab.baa#.",".#bssssb#.",".#.#..#.#."] },
+
+ { n:'Puddle', nt:'melts wide at base \u00b7 drips', ms:4600, sc:4, anim:'jig 3.6s ease-in-out infinite',
+   pal:{'#':'#4c5a66','b':'#e2ebf0','s':'#c3d2da','e':'#3a4854','p':'#cf9aa0','-':'#4c5a66'},
+   f:["...######...","..#bbbbbb#..",".#bebbbbeb#.",".#bpbbbbpb#.",".#bbbbbbbb#.","#bssssssssb#","#.#.#.#.#.#."] },
+
+ { n:'Crescent', nt:'tail curls around front \u00b7 moon bob', ms:5000, sc:4, anim:'bob 4.8s ease-in-out infinite',
+   pal:{'#':'#5e5540','b':'#efe6d2','s':'#dacdb0','e':'#443b28','p':'#d9a09a','-':'#5e5540','t':'#c9b07a'},
+   f:["....####....","...#bbbb#...","...#ebbe#...","...#bbbb#...","....#bb#....","..tt#ss#tt..",".t...##...t.","..t......t.."] },
+
+ { n:'Acorn', nt:'brown cap on cream head', ms:4200, sc:4, anim:'bob 4s ease-in-out infinite',
+   pal:{'#':'#5e4a38','b':'#f0e6d2','s':'#ddceb0','e':'#443626','p':'#d99f8f','-':'#5e4a38','a':'#8a6a44'},
+   f:[".....##.....","...aaaaaa...","..aaaaaaaa..",".#bbbbbbbb#.",".#bebbbbeb#.",".#bpbbbbpb#.",".#bssssssb#.","..#ssssss#..","...#.##.#..."] },
+
+ { n:'Moth', nt:'wide side frills flap \u00b7 flutter sway', ms:900, sc:4, anim:'sway 1.6s ease-in-out infinite',
+   pal:{'#':'#5a4e66','b':'#e9e2f0','s':'#cfc3dc','e':'#42384f','p':'#d29fb4','-':'#5a4e66','a':'#b7a5cc'},
+   f:[ ["#.##.#.","abbbbbba","bebbbbbe","abssssba","#.##.#."],
+      ["#.##.#.","abbbbbba","bebbbbbe",".bssssb.","#.##.#."] ] },
+
+ { n:'Lighthouse', nt:'striped column \u00b7 glowing eyes', ms:6000, sc:5, anim:'bob 6s ease-in-out infinite',
+   pal:{'#':'#2e3a4e','b':'#e8eef4','s':'#c9a04e','e':'#f4d58a','p':'#c98f6a','-':'#2e3a4e'},
+   f:["..######..","..#ebbe#..","..#bbbb#..","..#ssss#..","..#bbbb#..","..#ssss#..","..#bbbb#..","..#bbbb#..","..#.##.#.."] },
+
+ { n:'Dumpling', nt:'pleated crown \u00b7 jiggle', ms:3600, sc:4, anim:'jig 3.2s ease-in-out infinite',
+   pal:{'#':'#6b5f4a','b':'#f4ecd8','s':'#e2d4b2','e':'#4a4030','p':'#dd9f8a','-':'#6b5f4a'},
+   f:[".#.#.#.#.",".#######.","#bbbbbbb#","#bebbbbe#","#bpbbbpb#","#bsssssb#",".#.###.#."] },
+
+ { n:'Comet', nt:'speed-streak tail dashes \u00b7 quick hop', ms:2400, sc:4, anim:'hop 2s ease-in-out infinite',
+   pal:{'#':'#46586e','b':'#dfeaf4','s':'#bccfdf','e':'#33465c','p':'#d9a0a8','-':'#46586e','t':'#a8c4de'},
+   f:[ ["t.......######.","..t.....#bbbb#.","...t....#ebbe#.","...t....#bbbb#.","....t...#.##.#.","..........#.#."],
+      [".t......######.","..t.....#bbbb#.",".....t..#ebbe#.","....t...#bbbb#.","......t.#.##.#.","..........#.#."] ] },
+
+ { n:'Cap', nt:'red mushroom cap w/ spots', ms:4000, sc:4, anim:'bob 3.8s ease-in-out infinite',
+   pal:{'#':'#5e3a36','b':'#f2e4d4','s':'#e0c9b2','e':'#46302a','p':'#d98f84','-':'#5e3a36','a':'#c05a52'},
+   f:["..aaaaaaaa..","..abaaabaa..","..aaaaaaaa..","..#bbbbbb#..",".#bebbbbeb#.",".#bpbbbbpb#.",".#bssssssb#.","..#ssssss#..","...#.##.#..."] },
+
+ { n:'Bell', nt:'brass bell flare \u00b7 wide sway', ms:1000, sc:4, anim:'sway 1.4s ease-in-out infinite',
+   pal:{'#':'#5a4e32','b':'#ecd9a8','s':'#d4bc82','e':'#4a3e22','p':'#c9917a','-':'#5a4e32'},
+   f:[".....##.....","....####....","..#bbbbbb#..","..#bebbbeb#.","..#bbbbbb#..",".#bbbbbbbb#.",".#bssssssb#.","..#ssssss#..","..########.."] },
+
+ { n:'Pillow', nt:'soft square w/ scalloped hem', ms:4800, sc:4, anim:'jig 3.6s ease-in-out infinite',
+   pal:{'#':'#5e5266','b':'#efe6f0','s':'#dccce0','e':'#453a4e','p':'#d9a0b0','-':'#5e5266'},
+   f:["..######..",".#bbbbbb#.","#bebbbbbe#.","#bpbbbbpb#.","#bssssssb#.","#.##.##.##"] },
+
+ { n:'Twig', nt:'minimal stick body \u00b7 flick tail', ms:800, sc:5, anim:'sway 2.2s ease-in-out infinite',
+   pal:{'#':'#4e4238','b':'#e8ddca','s':'#d4c4a8','e':'#3a3028','p':'#cf9a86','-':'#4e4238','t':'#a08a68'},
+   f:[ ["#.##.#",".#bb#t.",".#ebbe.",".#bb#t.",".#bb#t.",".#.##."],
+      ["#.##.#","t#bb#.",".#ebbe.",".#bb#.",".#bb#t.",".#.##."] ] },
+
+ { n:'Halo', nt:'floating ring above head', ms:2000, sc:5, anim:'bob 2s ease-in-out infinite',
+   pal:{'#':'#565a6e','b':'#f0f0f6','s':'#d8d8e4','e':'#3e4254','p':'#d9aab4','-':'#565a6e','m':'#e8d48a'},
+   f:[ [".mmmm.","......",".####.","#ebbe#","#bbbb#","#bbbb#","#.##.#"],
+      ["......",".mmmm.",".####.","#ebbe#","#bbbb#","#bbbb#","#.##.#"] ] },
+
+ { n:'Onigiri', nt:'rice-ball triangle \u00b7 nori band', ms:3200, sc:4, anim:'hop 3.2s ease-in-out infinite',
+   pal:{'#':'#4a4a52','b':'#f4f2ea','s':'#e4e0d2','e':'#3a3a42','p':'#e0a0a0','-':'#4a4a52','a':'#2e3a30'},
+   f:[".....##.....","....#bb#....","...#ebbe#...","..#bbbbbb#..",".#bbbbbbbb#.","#aaaaaaaaaa#"] }
+];
+
+function blinkFrame(rows) {
+  return rows.map(function (r) { return r.replace(/e/g, '-'); });
+}
+function pad(rows) {                       // center rows so shapes read round, not boxed
+  var w = rows.reduce(function (m, r) { return Math.max(m, r.length); }, 0);
+  return rows.map(function (r) {
+    var l = Math.floor((w - r.length) / 2);
+    return new Array(l + 1).join('.') + r +
+           new Array(w - r.length - l + 1).join('.');
+  });
+}
+
+function build(v, cv) {
+  var poses = Array.isArray(v.f[0]) ? v.f : [v.f];
+  var frames = poses.map(pad);
+  var order = [];
+  frames.forEach(function (fr) { order.push(fr); order.push(blinkFrame(fr)); });
+
+  var W = frames.reduce(function (m, f) { return Math.max(m, f[0].length); }, 0);
+  var H = frames.reduce(function (m, f) { return Math.max(m, f.length); }, 0);
+  var scale = v.sc || 4;
+  cv.width = W * scale; cv.height = (H + 1) * scale;
+  var ctx = cv.getContext('2d');
+
+  function draw(fr) {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    for (var y = 0; y < fr.length; y++) {
+      for (var x = 0; x < fr[y].length; x++) {
+        var c = v.pal[fr[y][x]];
+        if (!c) continue;
+        ctx.fillStyle = c;
+        ctx.fillRect(x * scale, (y + 1) * scale, scale, scale);
+      }
+    }
+  }
+  var fi = 0; draw(order[0]);
+  setInterval(function () { fi = (fi + 1) % order.length; draw(order[fi]); }, v.ms);
+}
+
+var grid = document.getElementById('grid');
+V.forEach(function (v) {
+  var card = document.createElement('div'); card.className = 'card';
+  var wrap = document.createElement('div'); wrap.style.animation = v.anim;
+  var cv = document.createElement('canvas');
+  wrap.appendChild(cv);
+  var nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = v.n;
+  var nt = document.createElement('div'); nt.className = 'nt'; nt.textContent = v.nt;
+  card.appendChild(wrap); card.appendChild(nm); card.appendChild(nt);
+  grid.appendChild(card);
+  build(v, cv);
+});
+
+// ---- hero: live drift demo ------------------------------------------------
+(function hero() {
+  var v = V[19], cv = document.getElementById('heroCv'), pet = document.getElementById('heroC');
+  build(v, cv);
+  var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+  function pickSpot() {
+    var w = document.getElementById('hero').clientWidth, h = document.getElementById('hero').clientHeight;
+    var bw = cv.width, bh = cv.height;
+    var x, y, r = Math.random();
+    if (r < 0.32)      { x = rnd(10, Math.max(50, w * 0.2));  y = rnd(8, h * 0.4); }
+    else if (r < 0.64) { x = rnd(w * 0.72, w - bw - 10);      y = rnd(8, h * 0.4); }
+    else if (r < 0.82) { x = rnd(10, Math.max(50, w * 0.22)); y = rnd(h * 0.42, h - bh - 6); }
+    else if (r < 0.95) { x = rnd(w * 0.72, w - bw - 10);      y = rnd(h * 0.42, h - bh - 6); }
+    else               { x = rnd(w * 0.34, w * 0.6);          y = rnd(8, h * 0.3); }
+    x = Math.min(x, Math.max(0, w - bw)); y = Math.min(y, Math.max(0, h - bh));
+    return [Math.round(x), Math.round(y)];
+  }
+  var p0 = pickSpot();
+  pet.style.transform = 'translate(' + p0[0] + 'px,' + p0[1] + 'px)';
+  if (reduced) return;
+  function hop() {
+    var p = pickSpot(), dur = rnd(4, 9);
+    pet.style.transition = 'transform ' + dur.toFixed(2) + 's cubic-bezier(.35,.9,.4,1)';
+    pet.style.transform = 'translate(' + p[0] + 'px,' + p[1] + 'px)';
+    setTimeout(hop, dur * 1000 + rnd(2500, 7000));
+  }
+  setTimeout(hop, rnd(1500, 3500));
+})();
+</script>
+</body>
+</html>

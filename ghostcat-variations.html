@@ -1,0 +1,163 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin:0; padding:0; background:transparent; overflow:hidden; }
+  body { color: var(--foreground, #222); font: 12px/1.4 system-ui, sans-serif; }
+  .cap { padding:10px 16px 4px; color: var(--muted-foreground, #666); }
+  #hero { position:relative; height:128px; margin:2px 12px 12px; border-radius:12px;
+          background: color-mix(in srgb, var(--card, #eee) 55%, transparent); overflow:hidden; }
+  #heroC { position:absolute; left:0; top:0; will-change:transform; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
+          gap:18px 6px; padding:6px 14px 20px; }
+  .card { display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:4px; }
+  canvas { display:block; image-rendering:pixelated; image-rendering:crisp-edges; }
+  .nm { font-weight:600; font-size:11.5px; }
+  .nt { color: var(--muted-foreground, #666); font-size:10px; text-align:center; max-width:140px; }
+  @keyframes bob  { 0%,100% { transform: translateY(0); }  50% { transform: translateY(-4px); } }
+  @keyframes hop  { 0%,100% { transform: translateY(0); }  50% { transform: translateY(-7px); } }
+  @keyframes sway { 0%,100% { transform: translateX(0); }  50% { transform: translateX(-3px); } }
+  @keyframes jig  { 0%,100% { transform: translateY(0); }  50% { transform: translateY(-2px) scaleX(1.02); } }
+  @keyframes tilt { 0%,100% { transform: rotate(0deg); }   50% { transform: rotate(-4deg); } }
+</style>
+</head>
+<body>
+<div class="cap">ghost cat &#8212; 10 takes &#183; different bodies, ears, tails, faces, colours &#183; top strip = live drift demo</div>
+
+<div id="hero"><div id="heroC"><canvas id="heroCv"></canvas></div></div>
+<div class="grid" id="grid"></div>
+
+<script>
+// legend: '.' transparent '#' outline 'b' body 's' belly 'e' eye
+// 'p' blush/nose '-' closed eye 'a'/'m' fur patch 't' tail tip
+var V = [
+ { n:'Biggy', nt:'chibi head \u00b7 huge shiny eyes \u00b7 curious hop', ms:2800, sc:4, anim:'hop 3s ease-in-out infinite',
+   pal:{'#':'#54526b','b':'#f3efe6','s':'#ded8c8','e':'#4a4757','p':'#e6a9a0','-':'#54526b'},
+   f:["...######...","..#bbbbbb#..",".#bbbbbbbb#.",".#beebbeeb#.",".#beebbeeb#.",
+      ".#bbbppbbb#.",".#bbbbbbbb#.","..#bbbbbb#..","...#bbbb#...","....#bb#....","...##..##..."] },
+
+ { n:'Stick', nt:'thin ribbon ghost \u00b7 long trailing tail', ms:1000, sc:4, anim:'sway 3.4s ease-in-out infinite',
+   pal:{'#':'#586072','b':'#e6eaf4','s':'#c6cedf','e':'#3e5a7a','p':'#d9a4b0','-':'#586072','t':'#9db6d1'},
+   f:[ [ "..####..",".#bbbb#.",".#ebbeb.",".#bbbb#.",".#bbbbt.","..#bbt..","...bbt..","....bt..","....t..." ],
+       [ "..####..",".#bbbb#t",".#ebbeb.",".#bbbb#t",".#bbbbt.","..#bbt..","...bbt..","....t...","...t...." ] ] },
+
+ { n:'Loafy', nt:'wide flat loaf \u00b7 folded ears \u00b7 breathing', ms:3600, sc:4, anim:'jig 3s ease-in-out infinite',
+   pal:{'#':'#6b4f36','b':'#e8c39a','s':'#d3a878','e':'#4a3524','p':'#d98f7e','a':'#c9904f','-':'#6b4f36'},
+   f:["..#....#..",".########.","#bbebbebb#","#bpbbbbpb#","#assssssa#",".##.##.##."] },
+
+ { n:'Pearl', nt:'sleepy ball \u00b7 curled tail \u00b7 very calm', ms:5200, sc:4, anim:'bob 5s ease-in-out infinite',
+   pal:{'#':'#6b6b7e','b':'#efedf4','s':'#d6d2e2','e':'#565069','p':'#dcb4c4','-':'#6b6b7e','t':'#c9c3da'},
+   f:["..######..",".#bbbbbb#.",".#bebbeb#.",".tbbbbbb#.",".tbsbbsb#.",".ttbbbb##.","..######.."] },
+
+ { n:'Pointy', nt:'tall tuxedo \u00b7 triangle ears \u00b7 tail up', ms:1400, sc:4, anim:'bob 3.8s ease-in-out infinite',
+   pal:{'#':'#22262e','b':'#3b4252','e':'#a8e0cf','p':'#d9a0a0','m':'#eceff4','-':'#22262e','t':'#eceff4'},
+   f:[ [ ".#......#.","#b#....#b#","#bbbbbbbb#","#ebe..beb#","#bpp..ppb#",".#bmmmmb#.",".#bmmmmb#.",".#bmmmmbt.",".#bmmmmbt.","..##..##.." ],
+       [ ".#......#.","#b#....#b#","#bbbbbbbb#","#ebe..beb#","#bpp..ppb#",".#bmmmmb#.",".#bmmmmb#t",".#bmmmmb#.",".#bmmmmb#.t","..##..##.." ] ] },
+
+ { n:'Peek', nt:'peeks over the bottom edge \u00b7 paws up', ms:2200, sc:4, anim:'tilt 5s ease-in-out infinite',
+   pal:{'#':'#7a6a4f','b':'#f2e6cf','s':'#e0cfae','e':'#5a4a30','p':'#e2957f','-':'#7a6a4f'},
+   f:["#.#....#.#","##bbbbbb##","#ebebbbeb#","#bbppppbb#","#bbbbbbbb#","##.######.",".#..#...#."] },
+
+ { n:'Tiny', nt:'smallest kitten \u00b7 fastest blinks', ms:1500, sc:5, anim:'bob 2.4s ease-in-out infinite',
+   pal:{'#':'#6b5f4d','b':'#f0e2c8','e':'#4d4234','p':'#dd9f8f','-':'#6b5f4d'},
+   f:["#.#.##.#.#","#ebe..beb#","#bbppppbb#","#bbbbbbbb#",".#.##.##.#"] },
+
+ { n:'Moon', nt:'earless nightlight \u00b7 glowing eyes \u00b7 fringe', ms:5000, sc:4, anim:'bob 4.6s ease-in-out infinite',
+   pal:{'#':'#1f2536','b':'#33405c','e':'#8fe8d6','p':'#5a708c','-':'#1f2536'},
+   f:["...######...","..#bbbbbb#..",".#bbbbbbbb#.",".#bebbbbeb#.",".#bbbbbbbb#.",".#bbbbbbbb#.","..#bbbbbb#..","..#b#bb#b#..","...#.##.#..."] },
+
+ { n:'Tabby', nt:'striped head \u00b7 side-flick tail \u00b7 soft sway', ms:1200, sc:4, anim:'sway 4s ease-in-out infinite',
+   pal:{'#':'#4f5e4d','b':'#e4ecd9','s':'#c6d4b4','e':'#3b4a37','p':'#cfd08a','a':'#8ba07c','-':'#4f5e4d','t':'#8ba07c'},
+   f:[ [ "....####....","..#abababa#.",".#bbbbbbbb#.",".#beb..beb#.",".#bpbbbbpb#.",".#bssssssb#.","..#ssssss#..","...#.##.#t..","....#.#.tt.." ],
+       [ "....####....","..#abababa#.",".#bbbbbbbb#.",".#beb..beb#.",".#bpbbbbpb#.",".#bssssssb#.","..#ssssss#..","t..#.##.#...","tt...#.#...." ] ] },
+
+ { n:'Chonk', nt:'wide low sphere \u00b7 nub feet \u00b7 jiggles', ms:4800, sc:3, anim:'jig 3.2s ease-in-out infinite',
+   pal:{'#':'#4a5a6b','b':'#dfeaf2','s':'#c2d3e0','e':'#37475a','p':'#d9a6b5','-':'#4a5a6b'},
+   f:["....######....","..#bbbbbbbb#..",".#bbbbbbbbbb#.",".#eb......be#.",".#bpbbbbbbp#.",".#ssssssssss#.","..#ssssssss#..","..##..##..##.."] }
+];
+
+function blinkFrame(rows) {
+  return rows.map(function (r) { return r.replace(/e/g, '-'); });
+}
+function pad(rows) {                       // center rows so shapes read round, not boxed
+  var w = rows.reduce(function (m, r) { return Math.max(m, r.length); }, 0);
+  return rows.map(function (r) {
+    var l = Math.floor((w - r.length) / 2);
+    return new Array(l + 1).join('.') + r +
+           new Array(w - r.length - l + 1).join('.');
+  });
+}
+
+function build(v, cv) {
+  var poses = Array.isArray(v.f[0]) ? v.f : [v.f];
+  var frames = poses.map(pad);
+  var order = [];
+  frames.forEach(function (fr) { order.push(fr); order.push(blinkFrame(fr)); });
+
+  var W = frames.reduce(function (m, f) { return Math.max(m, f[0].length); }, 0);
+  var H = frames.reduce(function (m, f) { return Math.max(m, f.length); }, 0);
+  var scale = v.sc || 4;
+  cv.width = W * scale; cv.height = (H + 1) * scale;
+  var ctx = cv.getContext('2d');
+
+  function draw(fr) {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    for (var y = 0; y < fr.length; y++) {
+      for (var x = 0; x < fr[y].length; x++) {
+        var c = v.pal[fr[y][x]];
+        if (!c) continue;
+        ctx.fillStyle = c;
+        ctx.fillRect(x * scale, (y + 1) * scale, scale, scale);
+      }
+    }
+  }
+  var fi = 0; draw(order[0]);
+  setInterval(function () { fi = (fi + 1) % order.length; draw(order[fi]); }, v.ms);
+}
+
+var grid = document.getElementById('grid');
+V.forEach(function (v) {
+  var card = document.createElement('div'); card.className = 'card';
+  var wrap = document.createElement('div'); wrap.style.animation = v.anim;
+  var cv = document.createElement('canvas');
+  wrap.appendChild(cv);
+  var nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = v.n;
+  var nt = document.createElement('div'); nt.className = 'nt'; nt.textContent = v.nt;
+  card.appendChild(wrap); card.appendChild(nm); card.appendChild(nt);
+  grid.appendChild(card);
+  build(v, cv);
+});
+
+// ---- hero: live drift demo ------------------------------------------------
+(function hero() {
+  var v = V[0], cv = document.getElementById('heroCv'), pet = document.getElementById('heroC');
+  build(v, cv);
+  var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+  function pickSpot() {
+    var w = document.getElementById('hero').clientWidth, h = document.getElementById('hero').clientHeight;
+    var bw = cv.width, bh = cv.height;
+    var x, y, r = Math.random();
+    if (r < 0.32)      { x = rnd(10, Math.max(50, w * 0.2));  y = rnd(8, h * 0.4); }
+    else if (r < 0.64) { x = rnd(w * 0.72, w - bw - 10);      y = rnd(8, h * 0.4); }
+    else if (r < 0.82) { x = rnd(10, Math.max(50, w * 0.22)); y = rnd(h * 0.42, h - bh - 6); }
+    else if (r < 0.95) { x = rnd(w * 0.72, w - bw - 10);      y = rnd(h * 0.42, h - bh - 6); }
+    else               { x = rnd(w * 0.34, w * 0.6);          y = rnd(8, h * 0.3); }
+    x = Math.min(x, Math.max(0, w - bw)); y = Math.min(y, Math.max(0, h - bh));
+    return [Math.round(x), Math.round(y)];
+  }
+  var p0 = pickSpot();
+  pet.style.transform = 'translate(' + p0[0] + 'px,' + p0[1] + 'px)';
+  if (reduced) return;
+  function hop() {
+    var p = pickSpot(), dur = rnd(4, 9);
+    pet.style.transition = 'transform ' + dur.toFixed(2) + 's cubic-bezier(.35,.9,.4,1)';
+    pet.style.transform = 'translate(' + p[0] + 'px,' + p[1] + 'px)';
+    setTimeout(hop, dur * 1000 + rnd(2500, 7000));
+  }
+  setTimeout(hop, rnd(1500, 3500));
+})();
+</script>
+</body>
+</html>

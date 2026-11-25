@@ -1,0 +1,248 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin:0; padding:0; background:transparent; overflow:hidden; }
+  body { color: var(--foreground, #222); font: 12px/1.4 system-ui, sans-serif; }
+  .cap { padding:10px 16px 4px; color: var(--muted-foreground, #666); }
+  #hero { position:relative; height:132px; margin:2px 12px 12px; border-radius:12px;
+          background: color-mix(in srgb, var(--card, #eee) 55%, transparent); overflow:hidden; }
+  #heroC { position:absolute; left:0; top:0; will-change:transform; }
+  .grid { display:flex; flex-wrap:wrap; gap:14px 10px; padding:6px 14px 20px; }
+  .card { flex:1 1 160px; max-width:230px; min-height:168px; position:relative;
+          border-radius:10px; background: color-mix(in srgb, var(--card, #eee) 35%, transparent); }
+  .pet { position:absolute; left:0; top:0; will-change:transform; }
+  canvas { display:block; image-rendering:pixelated; image-rendering:crisp-edges; }
+  .lbl { position:absolute; left:0; right:0; bottom:5px; text-align:center; pointer-events:none; }
+  .nm { font-weight:600; font-size:11.5px; }
+  .nt { color: var(--muted-foreground, #666); font-size:9.5px; }
+</style>
+</head>
+<body>
+<div class="cap">ghost cat finalists — each with a full animation repertoire: wander, hop, somersault, swing, dash, upside-down floats &#183; top strip = Crescent roaming a wide area</div>
+
+<div id="hero"><div id="heroC" class="pet"><canvas id="heroCv"></canvas></div></div>
+<div class="grid" id="grid"></div>
+
+<script>
+// sprite legend: '.' transparent '#' outline 'b' body 's' belly 'e' eye
+// 'p' blush '-' closed eye · accent char animates as its own offset layer
+var SPR = {
+ Crescent: { accent:'t', tick:800, blinkEvery:4, bodyY:1.0, accY:1.4, accLead:0.9, sc:4,
+   pal:{'#':'#5e5540','b':'#efe6d2','s':'#dacdb0','e':'#443b28','p':'#d9a09a','t':'#c9b07a','-':'#5e5540'},
+   f:["...######...","..#bbbbbb#..",".#bbbbbbbb#.",".#bebbbbeb#.",".#bpbbbbpb#.",
+      ".#bssssssb#.","tt.#ssss#.tt","..tt#..#tt..","....tttt...."] },
+
+ Tabby: { accent:'t', tick:700, blinkEvery:4, bodyY:0, accY:0, sc:4,
+   pal:{'#':'#4f5e4d','b':'#e4ecd9','s':'#c6d4b4','e':'#3b4a37','p':'#cfd08a','a':'#8ba07c','t':'#8ba07c','-':'#4f5e4d'},
+   frames:[
+    ["....####....","..#abababa#.",".#bbbbbbbb#.",".#beb..beb#.",".#bpbbbbpb#.",".#bssssssb#.","..#ssssss#..","...#.##.#t..","....#.#.tt.."],
+    ["....####....","..#abababa#.",".#bbbbbbbb#.",".#beb..beb#.",".#bpbbbbpb#.",".#bssssssb#.","..#ssssss#..","t..#.##.#...","tt...#.#...."] ] },
+
+ Halo: { accent:'m', tick:650, blinkEvery:5, bodyY:0.7, accY:1.3, accLead:3.1, sc:4,
+   pal:{'#':'#565a6e','b':'#f0f0f6','s':'#d8d8e4','e':'#3e4254','p':'#d9aab4','m':'#e8d48a','-':'#565a6e'},
+   f:[".mmmmmm.","........","..####..",".#bbbb#.",".#ebbe#.",".#bpp#..",".#bbbb#.",".#bssb#.","..#.##.."] },
+
+ Tassel: { accent:'t', tick:620, blinkEvery:5, bodyY:0.6, accY:0, perCell:true, sc:4,
+   pal:{'#':'#4e3a48','b':'#e8dce8','s':'#cfbfce','e':'#3d2f3a','p':'#c98f9f','t':'#d4a94e','-':'#4e3a48'},
+   f:["....####....","..#bbbbbb#..",".#bbbbbbbb#.",".#bebbbbeb#.",".#bpbbbbpb#.",
+      ".#bssssssb#.","..#tttttt#..","...t.t.t...."] },
+
+ Comet: { accent:'t', tick:560, blinkEvery:5, bodyY:1.0, accX:1.0, hop:true, sc:4,
+   pal:{'#':'#46586e','b':'#dfeaf4','s':'#bccfdf','e':'#33465c','p':'#d9a0a8','t':'#a8c4de','-':'#46586e'},
+   f:["tt......",".tt.####","..t.ebbe","..t.bbbp","...t.##.","....#.#."] }
+};
+
+function pad(rows) {
+  var w = rows.reduce(function (m, r) { return Math.max(m, r.length); }, 0);
+  return rows.map(function (r) {
+    var l = Math.floor((w - r.length) / 2);
+    return new Array(l + 1).join('.') + r + new Array(w - r.length - l + 1).join('.');
+  });
+}
+function blinkRows(rows) { return rows.map(function (r) { return r.replace(/e/g, '-'); }); }
+
+// canvas: pose cycle + accent layer offset (same engine as finalists sheet)
+function sprite(v, cv) {
+  var frames = (v.frames || [v.f]).map(pad);
+  var W = frames.reduce(function (m, f) { return Math.max(m, f[0].length); }, 0);
+  var H = frames.reduce(function (m, f) { return Math.max(m, f.length); }, 0);
+  var S = v.sc || 4;
+  cv.width = (W + 2) * S; cv.height = (H + 2) * S;
+  var ctx = cv.getContext('2d'), i = 0;
+
+  function tick() {
+    var rows = frames[i % frames.length];
+    if (i % v.blinkEvery === v.blinkEvery - 1) rows = blinkRows(rows);
+    var ph = i * 0.85;
+    var bodyOy = Math.round(v.bodyY * Math.sin(ph));
+    var accOy = Math.round(v.accY * Math.sin(ph + v.accLead));
+    var accOx = v.accX ? Math.round(-v.accX * Math.sin(ph)) : 0;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    for (var y = 0; y < rows.length; y++)
+      for (var x = 0; x < rows[y].length; x++) {
+        var ch = rows[y][x], c = v.pal[ch];
+        if (!c) continue;
+        var dx = 0, dy = bodyOy;
+        if (ch === v.accent) {
+          dy = accOy; dx = accOx;
+          if (v.perCell) dy = Math.round(1.2 * Math.sin(ph * 1.3 + x * 0.7));
+        }
+        ctx.fillStyle = c; ctx.fillRect((x + dx) * S, (y + dy + 1) * S, S, S);
+      }
+    i++;
+  }
+  tick(); setInterval(tick, v.tick);
+  return { w: cv.width, h: cv.height };
+}
+
+function rnd(a, b) { return a + Math.random() * (b - a); }
+var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// place helper: compose translate/rotate/scale in one transform
+function move(el, box, cvsz, st) {
+  var mx = Math.max(0, box.clientWidth - cvsz.w - 8);
+  var my = Math.max(0, box.clientHeight - cvsz.h - 34);
+  var x = st.x !== undefined ? st.x : rnd(4, mx);
+  var y = st.y !== undefined ? st.y : rnd(4, my);
+  el.style.transition = 'transform ' + st.dur.toFixed(2) + 's ' + (st.ease || 'cubic-bezier(.35,.9,.4,1)');
+  el.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px)' +
+    ' rotate(' + (st.rot || 0) + 'deg)' +
+    ' scaleX(' + (st.fx || 1) + ') scaleY(' + (st.sy || 1) + ')';
+}
+
+// ---------- behavior per cat ----------------------------------------------
+var BH = {
+ // Crescent: smooth arc wander, head tilts, occasional slow full somersault
+ Crescent: function (el, box, sz, n) {
+   var flip = Math.random() < 0.3 ? 360 : (Math.random() < 0.5 ? rnd(-12, 12) : 0);
+   move(el, box, sz, { dur: rnd(3, 6), rot: flip });
+   setTimeout(function () { BH.Crescent(el, box, sz, n + 1); }, rnd(3500, 8000));
+ },
+
+ // Tabby: bouncy hop chain with squash-and-stretch landings, faces its walk dir
+ Tabby: function (el, box, sz, n) {
+   var mx = Math.max(0, box.clientWidth - sz.w - 8);
+   var cur = (el._x !== undefined) ? el._x : rnd(4, mx);
+   var nx = Math.min(mx, Math.max(4, cur + rnd(-70, 70)));
+   var fx = nx >= cur ? 1 : -1;
+   var hops = 2 + Math.floor(Math.random() * 3);
+   var step = (nx - cur) / hops;
+   var i = 0;
+   function doHop() {
+     var x = cur + step * (i + 1);
+     var lift = 6 + Math.random() * 6;
+     el._x = x;
+     // up-phase: stretch slightly
+     el.style.transition = 'transform ' + (0.22).toFixed(2) + 's ease-out';
+     el.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(
+       (box.clientHeight - sz.h - 34) * 0.18 - lift) + 'px) scaleX(' + fx + ') scaleY(1.06)';
+     setTimeout(function () {
+       // down-phase: squash on landing
+       el.style.transition = 'transform ' + (0.16).toFixed(2) + 's ease-in';
+       el.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(
+         (box.clientHeight - sz.h - 34) * 0.18) + 'px) scaleX(' + fx + ') scaleY(0.9)';
+       setTimeout(function () {
+         el.style.transition = 'transform ' + (0.12).toFixed(2) + 's ease-out';
+         el.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(
+           (box.clientHeight - sz.h - 34) * 0.18) + 'px) scaleX(' + fx + ') scaleY(1)';
+         i++;
+         if (i < hops) setTimeout(doHop, 60); else setTimeout(function () { BH.Tabby(el, box, sz, n + 1); }, rnd(1800, 4500));
+       }, 170);
+     }, 230);
+   }
+   doHop();
+ },
+
+ // Halo: rises and settles, drifts sideways, occasional calm backflip to upside-down
+ Halo: (function () {
+   var st = { x: null, y: null, rot: 0 };
+   return function (el, box, sz, n) {
+     var mx = Math.max(0, box.clientWidth - sz.w - 8);
+     var my = Math.max(0, box.clientHeight - sz.h - 34);
+     if (st.x === null) { st.x = rnd(4, mx); st.y = rnd(4, my); }
+     if (Math.random() < 0.35) {
+       st.rot = st.rot === 0 ? 180 : 0;                      // hover upside-down for a spell
+       move(el, box, sz, { x: st.x, y: st.y, dur: rnd(2.2, 3.2), rot: st.rot });
+     } else {
+       st.x = rnd(4, mx);
+       st.y = Math.random() < 0.5 ? rnd(4, my * 0.4) : rnd(my * 0.4, my);   // rise / settle
+       move(el, box, sz, { x: st.x, y: st.y, dur: rnd(2.5, 4.5), rot: st.rot });
+     }
+     setTimeout(function () { BH.Halo(el, box, sz, n + 1); }, rnd(3200, 7000));
+   };
+ })(),
+
+ // Tassel: hangs from the top edge and swings like a pendulum, then re-hooks elsewhere
+ Tassel: function (el, box, sz, n) {
+   var mx = Math.max(0, box.clientWidth - sz.w - 8);
+   var x = rnd(4, mx);
+   var amp = rnd(9, 16);
+   var y = 4;
+   el.style.transformOrigin = 'top center';
+   // glide to anchor
+   move(el, box, sz, { x: x, y: y, dur: rnd(1.2, 2.2), ease: 'ease-out' });
+   el._x = x;
+   var swings = [[amp, 0.9], [-amp * 0.7, 0.8], [amp * 0.45, 0.7], [-amp * 0.25, 0.6], [0, 0.5]];
+   var i = 0;
+   function sw() {
+     var s = swings[i];
+     el.style.transition = 'transform ' + s[1].toFixed(2) + 's cubic-bezier(.37,.01,.66,1)';
+     el.style.transform = 'translate(' + Math.round(x) + 'px,' + y + 'px) rotate(' + s[0].toFixed(1) + 'deg)';
+     i++;
+     if (i < swings.length) setTimeout(sw, s[1] * 1000 + 20);
+     else setTimeout(function () { BH.Tassel(el, box, sz, n + 1); }, rnd(2500, 6000));
+   }
+   setTimeout(sw, 900);
+ },
+
+ // Comet: fast dashes along random axes, streak leads, sometimes spins mid-dash
+ Comet: function (el, box, sz, n) {
+   var mx = Math.max(0, box.clientWidth - sz.w - 8);
+   var my = Math.max(0, box.clientHeight - sz.h - 34);
+   var x = rnd(4, mx), y = rnd(4, my);
+   var cur = el._x !== undefined ? el._x : x;
+   var fx = x >= cur ? -1 : 1;                 // face travel direction (streak leads)
+   el._x = x;
+   var spin = Math.random() < 0.35 ? 360 : 0;
+   move(el, box, sz, { x: x, y: y, dur: rnd(0.55, 1.15), ease: 'cubic-bezier(.2,.7,.3,1)', fx: fx, rot: spin });
+   setTimeout(function () { BH.Comet(el, box, sz, n + 1); }, rnd(1800, 5000));
+ }
+};
+
+// ---------- build ----------------------------------------------------------
+var NAMES = ['Crescent', 'Tabby', 'Halo', 'Tassel', 'Comet'];
+var NOTES = {
+ Crescent: 'arc wander · head tilts · somersault now and then',
+ Tabby: 'hop chains with squash-and-stretch, faces its walk',
+ Halo: 'rises, settles, drifts · hangs upside-down sometimes',
+ Tassel: 'hooks onto the top edge and swings like a bell',
+ Comet: 'zooms along random axes, spins mid-dash'
+};
+
+var grid = document.getElementById('grid');
+NAMES.forEach(function (name) {
+  var card = document.createElement('div'); card.className = 'card';
+  var pet = document.createElement('div'); pet.className = 'pet';
+  var cv = document.createElement('canvas');
+  pet.appendChild(cv);
+  var lbl = document.createElement('div'); lbl.className = 'lbl';
+  lbl.innerHTML = '<div class="nm">' + name + '</div><div class="nt">' + NOTES[name] + '</div>';
+  card.appendChild(pet); card.appendChild(lbl);
+  grid.appendChild(card);
+  var sz = sprite(SPR[name], cv);
+  if (reduced) { move(pet, card, sz, { dur: 0.01, x: 6, y: 6 }); return; }
+  setTimeout(function () { BH[name](pet, card, sz, 0); }, rnd(200, 900));
+});
+
+// ---- hero: Crescent roaming a wide strip (same logic, bigger stage) --------
+(function hero() {
+  var cv = document.getElementById('heroCv'), pet = document.getElementById('heroC');
+  var sz = sprite(SPR.Crescent, cv);
+  if (reduced) { move(pet, document.getElementById('hero'), sz, { dur: 0.01, x: 8, y: 8 }); return; }
+  BH.Crescent(pet, document.getElementById('hero'), sz, 0);
+})();
+</script>
+</body>
+</html>

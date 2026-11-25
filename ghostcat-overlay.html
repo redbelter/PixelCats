@@ -1,0 +1,110 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin:0; padding:0; background:transparent; overflow:hidden; height:100%; }
+  #pet { position:absolute; left:0; top:0; will-change:transform; }
+  canvas { display:block; opacity:.93;
+           image-rendering:pixelated; image-rendering:crisp-edges; }
+</style>
+</head>
+<body>
+<div id="pet"><canvas id="c"></canvas></div>
+<script>
+(function () {
+  // ---- pixel data (16 wide; '.' transparent) -----------------------------
+  var PAL = { '.':null, 'o':'#4a4757', 'b':'#f7f3e8', 's':'#e2dbcb',
+              'e':'#4a4757', 'k':'#f0b49e' };
+  var DOWN = [
+    "...oo......oo...",
+    "..oooooooooooo..",
+    "..obbbbbbbbbbo..",
+    "..obbbbbbbbbbo..",
+    "..obebbbbbbebo..",
+    "..obbbbbbbbbbo..",
+    "..obkbbbbbbkbo..",
+    "..obbbbbbbbbbo..",
+    "..osssssssssso..",
+    "..oooooooooooo..",
+    "...oo..oo..oo..."
+  ];
+  var BLK = "..obeebbbbeebo..";
+  // squash-up bob: drop one mid-body row so the cat stretches upward
+  var UP = DOWN.filter(function (_, i) { return i !== 4; });
+  var BLINK = DOWN.map(function(r){ return r.indexOf('e') >= 0 ? BLK : r; });
+  var FRAMES = [DOWN, UP, DOWN, BLINK];   // gentle bob + blink, steps-style
+
+  var S = 5, CW = 16, CH = 13;
+  var cv = document.getElementById('c');
+  cv.width = CW * S; cv.height = CH * S;
+  var ctx = cv.getContext('2d');
+
+  function drawFrame(rows, oy) {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    for (var y = 0; y < rows.length; y++) {
+      for (var x = 0; x < rows[y].length; x++) {
+        var col = PAL[rows[y][x]];
+        if (!col) continue;
+        ctx.fillStyle = col;
+        ctx.fillRect(x * S, (y + oy) * S, S, S);
+      }
+    }
+  }
+
+  var fi = 0;
+  drawFrame(FRAMES[0], 1);
+  setInterval(function () {
+    fi = (fi + 1) % FRAMES.length;
+    drawFrame(FRAMES[fi], fi === 1 ? 0 : 1);
+  }, 850);
+
+  // ---- genuinely-random drift (edge-biased, never looms over captions) ----
+  var pet = document.getElementById('pet');
+  var reduced = window.matchMedia &&
+                window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+
+  function pickSpot() {
+    var w = window.innerWidth, h = window.innerHeight;
+    var bw = cv.width, bh = cv.height;
+    var x, y, r = Math.random();
+    if (r < 0.30)      { x = rnd(20, Math.max(60, w * 0.18));       y = rnd(20, h * 0.28); }      // top-left
+    else if (r < 0.60) { x = rnd(w * 0.74, w - bw - 16);            y = rnd(20, h * 0.28); }      // top-right
+    else if (r < 0.78) { x = rnd(20, Math.max(60, w * 0.20));       y = rnd(h * 0.32, h * 0.68); } // mid-left
+    else if (r < 0.92) { x = rnd(w * 0.74, w - bw - 16);            y = rnd(h * 0.35, h * 0.72); } // mid-right
+    else               { x = rnd(w * 0.30, w * 0.62);               y = rnd(h * 0.06, h * 0.26); } // top-center
+    x = Math.min(x, Math.max(0, w - bw));
+    y = Math.min(y, Math.max(0, h - bh));
+    return [Math.round(x), Math.round(y)];
+  }
+
+  if (reduced) {
+    var p0 = pickSpot();
+    pet.style.transform = 'translate(' + p0[0] + 'px,' + p0[1] + 'px)';
+    return;
+  }
+
+  function hop() {
+    var p = pickSpot();
+    var dur = rnd(5, 12);
+    if (Math.random() < 0.18) dur = rnd(1.4, 2.2);       // occasional quick little hop
+    pet.style.transition = 'transform ' + dur.toFixed(2) + 's cubic-bezier(.35,.9,.4,1)';
+    pet.style.transform = 'translate(' + p[0] + 'px,' + p[1] + 'px)';
+    setTimeout(hop, dur * 1000 + rnd(3500, 11000));      // long idle between moves
+  }
+
+  var p = pickSpot();
+  pet.style.transform = 'translate(' + p[0] + 'px,' + p[1] + 'px)';
+  setTimeout(hop, rnd(2000, 5000));
+
+  window.addEventListener('resize', function () {
+    var q = pickSpot();
+    pet.style.transition = 'transform 2s ease';
+    pet.style.transform = 'translate(' + q[0] + 'px,' + q[1] + 'px)';
+  });
+})();
+</script>
+</body>
+</html>
